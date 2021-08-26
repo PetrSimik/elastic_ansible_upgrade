@@ -1,0 +1,10 @@
+# version of Elastic search to upgrade to
+elastic_package: elasticsearch-7.14
+elastic_user: elastic
+elastic_password: secretpassword
+
+
+#Set correct Heap < 1/2 RAM (32G node shall have 16g or less)
+#upgrade replacement of jvm.option due to upg breaking changes
+elasticsearch_heap_size_min: 15g
+elasticsearch_heap_size_max: 15g

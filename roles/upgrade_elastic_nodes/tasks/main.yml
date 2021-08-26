@@ -1,0 +1,92 @@
+- name: Add Elasticsearch GPG key.
+  rpm_key:
+    key: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+    state: present
+
+- name: Add Elasticsearch repository.
+  template:
+    src: elasticsearch.repo.j2
+    dest: /etc/yum.repos.d/elasticsearch.repo
+    mode: 0644
+
+- name: disable shard allocation
+  uri:
+    url: http://localhost:9200/_cluster/settings
+    user: "{{ elastic_user }}"
+    password: "{{ elastic_password }}"
+    body: '{"persistent":{"cluster.routing.allocation.enable":"primaries"}}' # specify no shard allocation
+    force_basic_auth: yes
+    body_format: json
+    method: PUT
+
+- name: stop non essential indexing to speed up shard recovery - no problem if return error (can be ignored)
+  uri:
+    user: "{{ elastic_user }}"
+    password: "{{ elastic_password }}"
+    url: http://localhost:9200/_flush/synced
+    method: POST
+    force_basic_auth: yes
+  ignore_errors: yes
+
+- name: stop elasticsearch on node
+  systemd:
+    name: elasticsearch
+    state: stopped
+
+- name: install/upgrade elasticsearch {{ elastic_package }}
+  package:
+    name: "{{ elastic_package }}"
+    state: present
+
+- name: Configure Elasticsearch. Set correct Heap < 1/2 RAM (32G node shall have 16g or less)
+  template:
+    src: "jvm.options.j2"
+    dest: /etc/elasticsearch/jvm.options
+    owner: root
+    group: elasticsearch
+    mode: 0660
+  with_items:
+    - jvm.options
+
+- name: systemctl daemon-reload
+  systemd:
+    daemon_reload: yes
+
+- name: start elasticsearch on node
+  systemd:
+    name: elasticsearch
+    state: started
+
+- name: ensure elasticsearch is running
+  systemd: state=started name=elasticsearch
+
+- name: Make sure Elasticsearch is running before proceeding.
+  wait_for:
+    host: "localhost"
+    port: "9200"
+    delay: 3
+    timeout: 300
+
+- name: enable shard allocation
+  uri:
+    url: http://localhost:9200/_cluster/settings
+    user: "{{ elastic_user }}"
+    password: "{{ elastic_password }}"
+    body: '{"persistent":{"cluster.routing.allocation.enable": null}}'
+    force_basic_auth: yes
+    body_format: json
+    method: PUT
+
+- name: Wait until cluster status is green {{ inventory_hostname }}
+  uri:
+    url: http://localhost:9200/_cat/health
+    user: "{{ elastic_user }}"
+    password: "{{ elastic_password }}"
+    force_basic_auth: yes
+    method: GET
+    return_content: yes
+    # body_format: json
+  register: response
+  until:  "'green'  in response.content"
+  retries: 90 # 90 * 5 seconds
+  delay: 5 # Every 5 seconds
