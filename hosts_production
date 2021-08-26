@@ -1,0 +1,4 @@
+[elastic_production_nodes]
+ela01node	 ansible_host=ela01node.domain
+ela02node    ansible_host=ela02node.domain
+ela03node    ansible_host=ela03node.domain
